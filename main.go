@@ -14,9 +14,11 @@ const defaultPort = ":61613"
 
 var serverAddr = flag.String("server", "localhost:61613", "STOMP server endpoint")
 var messageCount = flag.Int("count", 10, "Number of messages to send/receive")
+var pubisherCount = flag.Int("publisherCount", 1, "Number of publishers")
 var consumerCount = flag.Int("consumerCount", 1, "Number of consumers")
 var queueName = flag.String("queue", "/queue/stomp_test", "Destination queue")
 var publishOnly = flag.Bool("publishOnly", false, "If true, only publish messages, don't subscribe")
+var separateQueues = flag.Bool("separateQueues", false, "If true, each publisher uses a separate queue")
 var consumeOnly = flag.Bool("consumeOnly", false, "If true, only consume messages, don't publish")
 var timestampBody = flag.Bool("timestampBody", false, "If true, message body is perf-test compatible")
 var helpFlag = flag.Bool("help", false, "Print help text")
@@ -47,7 +49,9 @@ func main() {
 	}
 
 	if !*consumeOnly {
-		go sendMessages()
+		for i := 1; i <= *pubisherCount; i++ {
+			go sendMessages(i)
+		}
 	}
 
 	if !*publishOnly && !*consumeOnly {
@@ -56,7 +60,7 @@ func main() {
 	<-stop
 }
 
-func sendMessages() {
+func sendMessages(n int) {
 	defer func() {
 		stop <- true
 	}()
@@ -67,16 +71,22 @@ func sendMessages() {
 		return
 	}
 
+	var queue string
+	if *separateQueues {
+		queue = fmt.Sprintf("%s-%d", *queueName, n)
+	} else {
+		queue = *queueName
+	}
 	for i := 1; i <= *messageCount; i++ {
 		var text string
 		if *timestampBody {
 			b := make([]byte, 12)
 			binary.BigEndian.PutUint32(b[0:], uint32(1234))
 			binary.BigEndian.PutUint64(b[4:], uint64(time.Now().UnixMilli()))
-			err = conn.Send(*queueName, "", b, nil)
+			err = conn.Send(queue, "", b, nil)
 		} else {
 			text = fmt.Sprintf("Message #%d", i)
-			err = conn.Send(*queueName, "text/plain",
+			err = conn.Send(queue, "text/plain",
 			[]byte(text), nil)
 		}
 		if err != nil {
