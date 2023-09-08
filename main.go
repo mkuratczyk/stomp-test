@@ -4,7 +4,9 @@ import (
 	"encoding/binary"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/go-stomp/stomp/v3"
@@ -16,6 +18,7 @@ var serverAddr = flag.String("server", "localhost:61613", "STOMP server endpoint
 var messageCount = flag.Int("count", 10, "Number of messages to send/receive")
 var pubisherCount = flag.Int("publisherCount", 1, "Number of publishers")
 var consumerCount = flag.Int("consumerCount", 1, "Number of consumers")
+var interval = flag.Int("interval", 0, "Interval between messages (ms)")
 var queueName = flag.String("queue", "/queue/stomp_test", "Destination queue")
 var publishOnly = flag.Bool("publishOnly", false, "If true, only publish messages, don't subscribe")
 var separateQueues = flag.Bool("separateQueues", false, "If true, each publisher uses a separate queue")
@@ -38,10 +41,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	var wg sync.WaitGroup
+
 	if !*publishOnly {
-		for i := 0; i < *consumerCount; i++ {
+		for i := 1; i <= *consumerCount; i++ {
 			subscribed := make(chan bool)
-			go recvMessages(subscribed)
+			n := i
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				recvMessages(subscribed, n)
+			}()
 
 			// wait until we know the receiver has subscribed
 			<-subscribed
@@ -50,20 +60,22 @@ func main() {
 
 	if !*consumeOnly {
 		for i := 1; i <= *pubisherCount; i++ {
-			go sendMessages(i)
+			n := i
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sendMessages(n)
+			}()
 		}
 	}
 
-	if !*publishOnly && !*consumeOnly {
-		<-stop
-	}
-	<-stop
+	wg.Wait()
 }
 
 func sendMessages(n int) {
-	defer func() {
-		stop <- true
-	}()
+	// sleep random interval to avoid all senders connecting at the same time
+	s := rand.Intn(n)
+	time.Sleep(time.Duration(s) * time.Millisecond)
 
 	conn, err := stomp.Dial("tcp", *serverAddr, options...)
 	if err != nil {
@@ -86,23 +98,19 @@ func sendMessages(n int) {
 			err = conn.Send(queue, "", b, nil)
 		} else {
 			text = fmt.Sprintf("Message #%d", i)
-			err = conn.Send(queue, "text/plain",
-			[]byte(text), nil)
+			err = conn.Send(queue, "text/plain", []byte(text), nil)
 		}
 		if err != nil {
 			println("failed to send to server", err)
 			return
 		}
+		time.Sleep(time.Duration(*interval) * time.Millisecond)
 	}
 	time.Sleep(1 * time.Second)
 	println("sender finished")
 }
 
-func recvMessages(subscribed chan bool) {
-	defer func() {
-		stop <- true
-	}()
-
+func recvMessages(subscribed chan bool, n int) {
 	conn, err := stomp.Dial("tcp", *serverAddr, options...)
 
 	if err != nil {
@@ -111,9 +119,15 @@ func recvMessages(subscribed chan bool) {
 	}
 	println("Connected...")
 
-	sub, err := conn.Subscribe(*queueName, stomp.AckAuto)
+	var queue string
+	if *separateQueues {
+		queue = fmt.Sprintf("%s-%d", *queueName, n)
+	} else {
+		queue = *queueName
+	}
+	sub, err := conn.Subscribe(queue, stomp.AckAuto)
 	if err != nil {
-		println("cannot subscribe to", *queueName, err.Error())
+		println("cannot subscribe to", queue, err.Error())
 		return
 	}
 	println("Subscribed...")
@@ -128,6 +142,7 @@ func recvMessages(subscribed chan bool) {
 			println("Actual:", actualText)
 		}
 	}
+
 	println("receiver finished")
 
 }
