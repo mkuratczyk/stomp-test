@@ -12,8 +12,6 @@ import (
 	"github.com/go-stomp/stomp/v3"
 )
 
-const defaultPort = ":61613"
-
 var serverAddr = flag.String("server", "localhost:61613", "STOMP server endpoint")
 var messageCount = flag.Int("count", 10, "Number of messages to send/receive")
 var pubisherCount = flag.Int("publisherCount", 1, "Number of publishers")
@@ -25,7 +23,6 @@ var separateQueues = flag.Bool("separateQueues", false, "If true, each publisher
 var consumeOnly = flag.Bool("consumeOnly", false, "If true, only consume messages, don't publish")
 var timestampBody = flag.Bool("timestampBody", false, "If true, message body is perf-test compatible")
 var helpFlag = flag.Bool("help", false, "Print help text")
-var stop = make(chan bool)
 
 // these are the default options that work with RabbitMQ
 var options []func(*stomp.Conn) error = []func(*stomp.Conn) error{
