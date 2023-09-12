@@ -130,15 +130,17 @@ func recvMessages(subscribed chan bool, n int) {
 	println("Subscribed...")
 	close(subscribed)
 
-	for i := 1; i <= *messageCount; i++ {
-		msg := <-sub.C
-		expectedText := fmt.Sprintf("Message #%d", i)
-		actualText := string(msg.Body)
-		if expectedText != actualText {
-			println("Expected:", expectedText)
-			println("Actual:", actualText)
-		}
-	}
+    for i := 1; i <= *messageCount; i++ {
+        msg := <-sub.C
+        if !*timestampBody {
+            expectedText := fmt.Sprintf("Message #%d", i)
+            actualText := string(msg.Body)
+            if expectedText != actualText {
+                println("Expected:", expectedText)
+                println("Actual:", actualText)
+            }
+        }
+    }
 
 	println("receiver finished")
 
