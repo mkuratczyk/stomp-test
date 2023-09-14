@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +23,7 @@ var publishOnly = flag.Bool("publishOnly", false, "If true, only publish message
 var separateQueues = flag.Bool("separateQueues", false, "If true, each publisher uses a separate queue")
 var consumeOnly = flag.Bool("consumeOnly", false, "If true, only consume messages, don't publish")
 var timestampBody = flag.Bool("timestampBody", false, "If true, message body is perf-test compatible")
+var size = flag.Int("size", 20, "Size of message body (bytes)")
 var helpFlag = flag.Bool("help", false, "Print help text")
 
 // these are the default options that work with RabbitMQ
@@ -87,15 +89,17 @@ func sendMessages(n int) {
 		queue = *queueName
 	}
 	for i := 1; i <= *messageCount; i++ {
+		b := make([]byte, *size)
 		var text string
 		if *timestampBody {
-			b := make([]byte, 12)
 			binary.BigEndian.PutUint32(b[0:], uint32(1234))
 			binary.BigEndian.PutUint64(b[4:], uint64(time.Now().UnixMilli()))
 			err = conn.Send(queue, "", b, nil)
 		} else {
-			text = fmt.Sprintf("Message #%d", i)
-			err = conn.Send(queue, "text/plain", []byte(text), nil)
+			text = fmt.Sprintf("Message #%d:", i)
+			copy(b[0:len(text)], []byte(text))
+
+			err = conn.Send(queue, "", b, nil)
 		}
 		if err != nil {
 			println("failed to send to server", err)
@@ -130,17 +134,17 @@ func recvMessages(subscribed chan bool, n int) {
 	println("Subscribed...")
 	close(subscribed)
 
-    for i := 1; i <= *messageCount; i++ {
-        msg := <-sub.C
-        if !*timestampBody {
-            expectedText := fmt.Sprintf("Message #%d", i)
-            actualText := string(msg.Body)
-            if expectedText != actualText {
-                println("Expected:", expectedText)
-                println("Actual:", actualText)
-            }
-        }
-    }
+	for i := 1; i <= *messageCount; i++ {
+		msg := <-sub.C
+		if !*timestampBody {
+			expectedText := fmt.Sprintf("Message #%d", i)
+			actualText, _, _ := strings.Cut(string(msg.Body), ":")
+			if expectedText != actualText {
+				println("Expected:", expectedText)
+				println("Actual:", actualText)
+			}
+		}
+	}
 
 	println("receiver finished")
 
